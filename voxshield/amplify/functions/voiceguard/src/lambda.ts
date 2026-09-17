@@ -9,6 +9,7 @@ export const handler = async (event: any): Promise<any> => {
   console.log("Received event:", JSON.stringify(event));
 
   // Check if this is an S3 upload event or API Gateway event
+  const eventRecords = event.Records || [];
   if (eventRecords && eventRecords.length > 0 && eventRecords[0].s3) {
     // S3 Event - audio already uploaded
     return handleS3Event(event);
