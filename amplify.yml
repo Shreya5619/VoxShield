@@ -1,16 +1,17 @@
 version: 1
 frontend:
+  baseDirectory: voxshield
   phases:
     preBuild:
       commands:
-        - npm install
+        - cd voxshield && npm install
     build:
       commands:
-        - npx expo export --platform web
+        - cd voxshield && npx expo export --platform web
   artifacts:
-    baseDirectory: dist
+    baseDirectory: voxshield/dist
     files:
       - '**/*'
   cache:
     paths:
-      - node_modules/**/*
+      - voxshield/node_modules/**/*
