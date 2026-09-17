@@ -7,7 +7,7 @@ frontend:
         - cd voxshield && npm install
     build:
       commands:
-        - cd voxshield && npx expo export --platform web
+        - npx expo export --platform web
   artifacts:
     baseDirectory: voxshield/dist
     files:
