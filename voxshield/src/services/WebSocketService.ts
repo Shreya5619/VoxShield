@@ -100,10 +100,23 @@ class WebSocketService {
       }
 
       this.updateStatus('connecting');
+      console.log('Attempting WebSocket connection...'); // Debug log
 
       try {
         // Build URL with query parameters
         const url = this.buildWebSocketUrl();
+        console.log('WebSocket URL:', url); // Debug log
+        
+        // Validate URL
+        try {
+          new URL(url.replace(/^wss?:\/\//, 'https://')); // Validate without protocol
+        } catch (e) {
+          this.handleError(`Invalid WebSocket URL: ${url}`);
+          resolve(false);
+          return;
+        }
+        
+        console.log('WebSocket URL is valid');
         
         // Create WebSocket connection
         this.socket = new WebSocket(url);

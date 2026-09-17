@@ -1,7 +1,7 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
 import { performanceMonitor } from '../utils/PerformanceMonitor';
+import webAudioRecorder, { WebAudioChunk } from './WebAudioRecorder';
 
 /**
  * Audio Recorder Service for real-time audio streaming
@@ -128,6 +128,9 @@ class AudioRecorderService {
     processingLatency: 0
   };
 
+  // Web-specific recorder - only used on web platform
+  private webRecorder: typeof webAudioRecorder | null = null;
+  
   constructor(options: AudioRecordingOptions = {}) {
     this.recordingOptions = {
       sampleRate: 16000,           // AWS Transcribe requires 16kHz
@@ -146,6 +149,9 @@ class AudioRecorderService {
       (this.recordingOptions.sampleRate! * this.recordingOptions.chunkDurationMs!) / 1000
     );
     this.bufferMaxSize = samplesPerChunk * 10; // Buffer for 10 chunks
+    
+    // Initialize web recorder if on web platform
+    this.webRecorder = Platform.OS === 'web' ? webAudioRecorder : null!;
   }
 
   /**
@@ -153,7 +159,18 @@ class AudioRecorderService {
    */
   async initialize(): Promise<boolean> {
     try {
-      // Request recording permissions
+      const isWeb = Platform.OS === 'web';
+      
+      if (isWeb) {
+        // Use web recorder for browser
+        if (!this.webRecorder) {
+          this.emitError('Web recorder not initialized');
+          return false;
+        }
+        return await this.webRecorder.initialize();
+      }
+      
+      // Request recording permissions for mobile
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
         this.emitError('Microphone permission not granted');
@@ -181,7 +198,7 @@ class AudioRecorderService {
 
   /**
    * Start audio recording with real-time chunking
-   * Uses WAV format for PCM audio capture compatible with AWS Transcribe Streaming
+   * Uses native MediaRecorder for web, expo-av for mobile
    */
   async startRecording(): Promise<boolean> {
     if (this.isRecording) {
@@ -189,33 +206,101 @@ class AudioRecorderService {
       return false;
     }
 
+    const isWeb = Platform.OS === 'web';
+    
     try {
-      // Configure recording options for WAV format (PCM audio)
+      if (isWeb) {
+        // Use web recorder for browser
+        return await this.startWebRecording();
+      }
+      
+      // Mobile recording with expo-av
+      return await this.startMobileRecording();
+      
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      this.emitError(`Failed to start recording: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Start web recording with MediaRecorder
+   */
+  private async startWebRecording(): Promise<boolean> {
+    try {
+      console.log('Starting web audio recording with MediaRecorder');
+      
+      // Check if web recorder is initialized
+      if (!this.webRecorder) {
+        this.emitError('Web recorder not initialized');
+        return false;
+      }
+      
+      // Set up web recorder callbacks
+      this.webRecorder.onChunk((chunk: any) => {
+        this.handleWebChunk(chunk);
+      });
+      
+      this.webRecorder.onError((error: string) => {
+        this.emitError(`Web recording error: ${error}`);
+      });
+      
+      // Start web recording
+      const started = await this.webRecorder.startRecording();
+      
+      if (started) {
+        this.isRecording = true;
+        this.chunkIndex = 0;
+        this.audioBuffer = [];
+        this.bufferSize = 0;
+        this.processingStartTimes.clear();
+        this.recordingStartTime = Date.now();
+        
+        console.log('Web audio recording started');
+      }
+      
+      return started;
+      
+    } catch (error) {
+      console.error('Error starting web recording:', error);
+      this.emitError(`Failed to start web recording: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Start mobile recording with expo-av
+   */
+  private async startMobileRecording(): Promise<boolean> {
+    try {
+      // Configure recording options
+      // For web: Use audio/webm for browser compatibility (MediaRecorder supports this)
+      // For mobile: Use WAV/PCM for AWS Transcribe compatibility
       const recordingConfig: Audio.RecordingOptions = {
         android: {
-          extension: '.wav',  // WAV format for PCM
+          extension: '.m4a',  // MP4 for better compatibility
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
           audioEncoder: Audio.AndroidAudioEncoder.AAC,
           sampleRate: this.recordingOptions.sampleRate,
           numberOfChannels: this.recordingOptions.numberOfChannels,
-          bitRate: 32000, // 32kbps for reasonable quality/size
+          bitRate: 32000,
         },
         ios: {
-          extension: '.wav',  // WAV format for PCM
-          outputFormat: Audio.IOSOutputFormat.LINEARPCM,
+          extension: '.m4a',  // MP4 for better compatibility
+          outputFormat: Audio.IOSOutputFormat.MPEG_4,
           audioQuality: Audio.IOSAudioQuality.MEDIUM,
           sampleRate: this.recordingOptions.sampleRate,
           numberOfChannels: this.recordingOptions.numberOfChannels,
           bitRate: 32000,
-          linearPCMBitDepth: this.recordingOptions.bitDepth,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
         },
         web: {
-          mimeType: 'audio/wav',
+          mimeType: 'audio/webm',
           bitsPerSecond: 32000,
         },
       };
+      
+      console.log(`Recording config for mobile:`, recordingConfig);
 
       console.log('Starting recording with PCM WAV format for real-time streaming');
       
@@ -260,18 +345,98 @@ class AudioRecorderService {
       return true;
 
     } catch (error) {
-      console.error('Error starting recording:', error);
-      this.emitError(`Failed to start recording: ${error}`);
-      this.cleanup();
+      console.error('Error starting mobile recording:', error);
+      this.emitError(`Failed to start mobile recording: ${error}`);
       return false;
     }
+  }
+
+  /**
+   * Handle web audio chunk and convert to AudioChunk format
+   */
+  private handleWebChunk(chunk: any): void {
+    if (!this.isRecording) return;
+    
+    // Convert WebAudioChunk to AudioChunk format
+    const audioChunk: AudioChunk = {
+      id: chunk.id,
+      data: chunk.data,
+      index: chunk.index,
+      timestamp: chunk.timestamp,
+      durationMs: chunk.durationMs,
+      sizeBytes: chunk.sizeBytes,
+      format: chunk.format,
+      pcmData: chunk.pcmData,
+    };
+    
+    this.emitChunk(audioChunk);
   }
 
   /**
    * Stop audio recording
    */
   async stopRecording(): Promise<AudioChunk[] | null> {
-    if (!this.isRecording || !this.recording) {
+    const isWeb = Platform.OS === 'web';
+    
+    if (!this.isRecording) {
+      return null;
+    }
+
+    try {
+      if (isWeb) {
+        // Stop web recording
+        return await this.stopWebRecording();
+      }
+      
+      // Stop mobile recording with expo-av
+      return await this.stopMobileRecording();
+      
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      this.emitError(`Failed to stop recording: ${error}`);
+      this.cleanup();
+      return null;
+    }
+  }
+
+  /**
+   * Stop web recording
+   */
+  private async stopWebRecording(): Promise<AudioChunk[] | null> {
+    console.log('Stopping web audio recording');
+    
+    // Check if web recorder is initialized
+    if (!this.webRecorder) {
+      this.emitError('Web recorder not initialized');
+      return null;
+    }
+    
+    // Stop web recorder
+    const result = await this.webRecorder.stopRecording();
+    
+    // Update final stats
+    this.updateStats();
+    
+    this.isRecording = false;
+    this.chunkIndex = 0;
+    this.audioBuffer = [];
+    this.bufferSize = 0;
+    this.processingStartTimes.clear();
+    
+    console.log('Web recording stopped:', {
+      duration: this.stats.durationMs,
+      chunks: this.stats.chunksRecorded,
+      bytes: this.stats.bytesRecorded
+    });
+    
+    return null; // Web recorder doesn't return chunks immediately
+  }
+
+  /**
+   * Stop mobile recording with expo-av
+   */
+  private async stopMobileRecording(): Promise<AudioChunk[] | null> {
+    if (!this.recording) {
       return null;
     }
 
@@ -312,8 +477,8 @@ class AudioRecorderService {
       return null;
 
     } catch (error) {
-      console.error('Error stopping recording:', error);
-      this.emitError(`Failed to stop recording: ${error}`);
+      console.error('Error stopping mobile recording:', error);
+      this.emitError(`Failed to stop mobile recording: ${error}`);
       this.cleanup();
       return null;
     }
@@ -458,12 +623,20 @@ class AudioRecorderService {
    * Clean up resources
    */
   cleanup(): void {
+    const isWeb = Platform.OS === 'web';
+    
     this.stopChunkTimer();
     this.stopMaxRecordingTimer();
     
-    if (this.recording) {
-      this.recording.stopAndUnloadAsync().catch(() => {});
-      this.recording = null;
+    if (isWeb && this.webRecorder) {
+      // Clean up web recorder
+      this.webRecorder.cleanup();
+    } else {
+      // Clean up mobile recorder
+      if (this.recording) {
+        this.recording.stopAndUnloadAsync().catch(() => {});
+        this.recording = null;
+      }
     }
 
     this.isRecording = false;
@@ -589,15 +762,23 @@ class AudioRecorderService {
 
   /**
    * Capture audio chunk from current recording
-   * This method creates actual audio chunks by reading from the recording file
-   * and converting to PCM format for real-time streaming
+   * This method is only used for mobile (expo-av) recording
    */
   private async captureChunk(): Promise<void> {
-    if (!this.isRecording || !this.recording) {
+    if (!this.isRecording) {
       return;
     }
 
     try {
+      // For web, chunks are handled by MediaRecorder's ondataavailable event
+      if (Platform.OS === 'web') {
+        return;
+      }
+
+      if (!this.recording) {
+        return;
+      }
+
       // Get current recording status
       const status = await this.recording.getStatusAsync();
       

@@ -16,10 +16,11 @@ export interface AppConfig {
 
 export const appConfig: AppConfig = {
   // WebSocket URL
-  // TODO: Update this with your actual API Gateway WebSocket URL
+  // Reads from EXPO_PUBLIC_WEBSOCKET_URL environment variable
   // Format: wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}
-  // Get this from: amplify push -> API Gateway -> Stages -> {stage} -> URL
-  websocketUrl: 'wss://your-api-gateway-url.amazonaws.com/prod',
+  websocketUrl: typeof process.env.EXPO_PUBLIC_WEBSOCKET_URL !== 'undefined' 
+    ? process.env.EXPO_PUBLIC_WEBSOCKET_URL 
+    : 'wss://your-api-gateway-url.amazonaws.com/prod',
   
   // AWS Region
   awsRegion: 'us-east-1',
@@ -28,5 +29,9 @@ export const appConfig: AppConfig = {
   maxRecordingDuration: 300, // 5 minutes
   chunkDurationMs: 200, // 200ms chunks for real-time streaming
 };
+
+// Log config for debugging (remove in production)
+console.log('App Config - WebSocket URL:', appConfig.websocketUrl);
+console.log('App Config - Environment EXPO_PUBLIC_WEBSOCKET_URL:', process.env.EXPO_PUBLIC_WEBSOCKET_URL);
 
 export default appConfig;
