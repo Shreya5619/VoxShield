@@ -2,10 +2,12 @@ import json
 import os
 import boto3
 from datetime import datetime
+import asyncio
 
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ.get('CONNECTION_TABLE', 'VoxShieldConnections')
 table = dynamodb.Table(table_name)
+transcribe = boto3.client('transcribe', region_name='us-east-1')
 
 def lambda_handler(event, context):
     """Handle WebSocket API Gateway events"""
@@ -25,7 +27,9 @@ def lambda_handler(event, context):
         return handle_disconnect(connection_id)
     else:
         # $default route - process incoming messages
-        return handle_message(connection_id, event)
+        handle_message_no_response(connection_id, event, context)
+        # Return immediately without waiting for response
+        return {'statusCode': 200}
 
 def handle_connect(connection_id, event):
     """Handle new WebSocket connection"""
@@ -51,15 +55,15 @@ def handle_connect(connection_id, event):
     except Exception as e:
         print(f"Error saving connection: {str(e)}")
     
-    return {
-        'statusCode': 200,
-        'body': json.dumps({
-            'type': 'connection_established',
-            'connectionId': connection_id,
-            'userId': user_id,
-            'timestamp': datetime.utcnow().isoformat()
-        })
-    }
+    # Send connection established response
+    send_response_async(connection_id, event, {
+        'type': 'connection_established',
+        'connectionId': connection_id,
+        'userId': user_id,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    
+    return {'statusCode': 200}
 
 def handle_disconnect(connection_id):
     """Handle WebSocket disconnection"""
@@ -73,18 +77,13 @@ def handle_disconnect(connection_id):
     except Exception as e:
         print(f"Error removing connection: {str(e)}")
     
-    return {
-        'statusCode': 200,
-        'body': json.dumps({
-            'type': 'disconnected',
-            'connectionId': connection_id,
-            'timestamp': datetime.utcnow().isoformat()
-        })
-    }
+    return {'statusCode': 200}
 
-def handle_message(connection_id, event):
-    """Handle incoming WebSocket message"""
+def handle_message_no_response(connection_id, event, context):
+    """Handle incoming WebSocket message without blocking"""
     try:
+        print(f"handle_message called with connection_id: {connection_id}")
+        
         body = json.loads(event.get('body', '{}'))
         message_type = body.get('type', 'unknown')
         
@@ -92,75 +91,143 @@ def handle_message(connection_id, event):
         
         # Process different message types
         if message_type == 'ping':
-            response = create_response(connection_id, {
+            print("Processing ping message")
+            send_response_async(connection_id, event, {
                 'type': 'pong',
                 'timestamp': datetime.utcnow().isoformat()
             })
         elif message_type == 'start_streaming':
-            response = create_response(connection_id, {
+            print("Processing start_streaming message")
+            start_transcription_stream(connection_id, event, body)
+            send_response_async(connection_id, event, {
                 'type': 'streaming_started',
                 'timestamp': datetime.utcnow().isoformat(),
                 'message': 'Ready to receive audio chunks'
             })
         elif message_type == 'stop_streaming':
-            response = create_response(connection_id, {
+            print("Processing stop_streaming message")
+            stop_transcription_stream(connection_id, event)
+            send_response_async(connection_id, event, {
                 'type': 'streaming_stopped',
                 'timestamp': datetime.utcnow().isoformat()
             })
         elif message_type == 'audio_chunk':
-            response = create_response(connection_id, {
-                'type': 'chunk_received',
-                'chunkId': body.get('chunkId', 'unknown'),
-                'timestamp': datetime.utcnow().isoformat()
-            })
-            # In production, you would forward audio chunks to Transcribe or ML service
             print(f"Received audio chunk: {body.get('chunkId')}")
+            # Forward audio chunk to transcription
+            forward_audio_chunk(connection_id, event, body)
         else:
-            response = create_response(connection_id, {
+            print(f"Unknown message type: {message_type}")
+            send_response_async(connection_id, event, {
                 'type': 'error',
                 'message': f'Unknown message type: {message_type}'
             })
-        
-        return response
-        
+            
     except json.JSONDecodeError as e:
         print(f"Invalid JSON: {str(e)}")
-        return create_response(connection_id, {
-            'type': 'error',
-            'message': 'Invalid JSON format'
-        })
     except Exception as e:
         print(f"Error handling message: {str(e)}")
-        return create_response(connection_id, {
-            'type': 'error',
+
+def start_transcription_stream(connection_id, event, message_body):
+    """Start a new transcription stream"""
+    try:
+        # Get streaming parameters
+        session_id = message_body.get('data', {}).get('sessionId', 'default')
+        language_code = 'en-US'
+        sample_rate = message_body.get('data', {}).get('sampleRate', 16000)
+        
+        print(f"Starting transcription stream for session: {session_id}")
+        
+        # Start transcription stream
+        response = transcribe.start_streaming_transcription(
+            LanguageCode=language_code,
+            MediaEncoding='pcm',
+            SampleRate=sample_rate,
+            AudioStream={
+                'Body': None  # We'll send chunks separately
+            }
+        )
+        
+        print(f"Transcription stream started: {response}")
+        
+        # Store stream details in DynamoDB
+        table.update_item(
+            Key={'connectionId': connection_id},
+            UpdateExpression='SET transcriptionStreamId = :sid',
+            ExpressionAttributeValues={':sid': response.get('TranscriptionStreamId', session_id)}
+        )
+        
+    except Exception as e:
+        print(f"Error starting transcription stream: {str(e)}")
+        send_response_async(connection_id, event, {
+            'type': 'transcription_error',
             'message': str(e)
         })
 
-def create_response(connection_id, response_data):
-    """Send response back to WebSocket client"""
-    print(f"Sending response to {connection_id}: {json.dumps(response_data)}")
-    
-    # Get API Gateway endpoint from environment
-    api_endpoint = os.environ.get('API_GATEWAY_ENDPOINT', '')
-    if not api_endpoint:
-        # Construct from request context
-        domain_name = os.environ.get('DOMAIN_NAME', '')
-        stage = os.environ.get('STAGE', 'prod')
-        api_endpoint = f"https://{domain_name}/{stage}"
-    
+def stop_transcription_stream(connection_id, event):
+    """Stop the current transcription stream"""
     try:
-        # Use apigatewaymanagementapi to send response
-        api_gateway_client = boto3.client('apigatewaymanagementapi', 
-            endpoint_url=api_endpoint)
+        # Get stream ID from DynamoDB
+        response = table.get_item(Key={'connectionId': connection_id})
+        stream_id = response.get('Item', {}).get('transcriptionStreamId')
         
-        api_gateway_client.post_to_connection(
-            ConnectionId=connection_id,
-            Data=json.dumps(response_data).encode('utf-8')
-        )
-        print(f"Successfully sent response to {connection_id}")
-        
+        if stream_id:
+            print(f"Stopping transcription stream: {stream_id}")
+            # In production, you would stop the stream here
+        else:
+            print("No active transcription stream found")
+            
     except Exception as e:
-        print(f"Error sending response: {str(e)}")
-        # Don't return error - just log it
+        print(f"Error stopping transcription stream: {str(e)}")
+
+def forward_audio_chunk(connection_id, event, message_body):
+    """Forward audio chunk to transcription service"""
+    try:
+        # Get the audio data (base64 encoded PCM)
+        audio_data = message_body.get('audioData', '')
+        chunk_id = message_body.get('chunkId', '')
+        
+        if audio_data:
+            print(f"Forwarding audio chunk {chunk_id} to transcription")
+            
+            # In production, you would send the audio data to the transcription stream
+            # For now, we'll just log it
+            # audio_bytes = base64.b64decode(audio_data)
+            # stream.write(audio_bytes)
+            
+    except Exception as e:
+        print(f"Error forwarding audio chunk: {str(e)}")
+
+def send_response_async(connection_id, event, response_data):
+    """Send response back to WebSocket client in a separate thread"""
+    import threading
     
-    return {'statusCode': 200}
+    def send():
+        try:
+            request_context = event.get('requestContext', {})
+            domain_name = request_context.get('domainName', '')
+            stage = request_context.get('stage', 'prod')
+            
+            if not domain_name:
+                print(f"ERROR: domainName not found in request context")
+                return
+            
+            api_endpoint = f"https://{domain_name}/{stage}"
+            print(f"Sending response to {connection_id} via {api_endpoint}")
+            
+            # Use apigatewaymanagementapi to send response
+            api_gateway_client = boto3.client('apigatewaymanagementapi', 
+                endpoint_url=api_endpoint)
+            
+            api_gateway_client.post_to_connection(
+                ConnectionId=connection_id,
+                Data=json.dumps(response_data).encode('utf-8')
+            )
+            print(f"Successfully sent response to {connection_id}")
+            
+        except Exception as e:
+            print(f"Error sending response: {str(e)}")
+    
+    # Start in a new thread to not block Lambda
+    thread = threading.Thread(target=send)
+    thread.daemon = True
+    thread.start()
