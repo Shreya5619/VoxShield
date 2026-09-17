@@ -396,7 +396,8 @@ class WebSocketService {
 
       case 'error':
         console.error('Server error:', message.data);
-        this.handleError(`Server error: ${message.data.message || 'Unknown error'}`);
+        const errorMsg = message.data && typeof message.data === 'object' ? message.data.message : message.data;
+        this.handleError(`Server error: ${errorMsg || 'Unknown error'}`);
         break;
 
       case 'connection_established':

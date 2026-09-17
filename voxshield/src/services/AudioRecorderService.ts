@@ -137,7 +137,7 @@ class AudioRecorderService {
       numberOfChannels: 1,         // Mono audio for Transcribe
       bitDepth: 16,                // 16-bit audio for PCM
       audioFormat: 'wav',          // WAV format for PCM compatibility
-      chunkDurationMs: 200,        // 200ms chunks for real-time (<1s latency)
+      chunkDurationMs: 10000,      // 10 seconds chunks for S3 batch transcription
       enableStreaming: true,       // Enable real-time streaming
       maxDurationSeconds: 300,     // 5 minute maximum
       websocketUrl: '',            // WebSocket URL for streaming
