@@ -1,0 +1,92 @@
+{
+  "pbtResults": {
+    "1. Write bug condition exploration test": {
+      "status": "passed",
+      "failingExample": "Counterexample confirmed: react-native-safe-area-context@4.14.1 + react-native@0.86.3 on arm64-v8a. RNCSafeAreaViewShadowNode.cpp lines 19 and 22 call `edge.unit()` and `axis.unit()` on `yoga::StyleLength` — an accessor removed in Yoga 3.x (RN 0.76+). Expected build error: \"error: no member named 'unit' in 'facebook::yoga::StyleLength'\" at RNCSafeAreaViewShadowNode.cpp:19 and :22. isBugCondition(X) = true.",
+      "lastRunTimestamp": 1789623761295
+    },
+    "2. Write preservation property tests (BEFORE implementing fix)": {
+      "status": "passed",
+      "lastRunTimestamp": 1789624161822
+    }
+  },
+  "executionHistory": {
+    "1. Write bug condition exploration test": [
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623314332
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623324293
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623776883
+      }
+    ],
+    "2. Write preservation property tests (BEFORE implementing fix)": [
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623314422
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623784787
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789624180377
+      }
+    ],
+    "3.1 Implement the fix": [
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623314510
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789624184260
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789624367451
+      }
+    ],
+    "3.2 Verify bug condition exploration test now passes": [
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623314578
+      },
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789624373169
+      }
+    ],
+    "3.3 Verify preservation tests still pass": [
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623314646
+      }
+    ],
+    "4. Checkpoint — Ensure all tests pass": [
+      {
+        "executionId": "783151d8-85ff-42ef-bf50-2b6ae0d91708",
+        "chatSessionId": "sess_1ed5142a-9715-4d67-b1b6-186b8c90c285",
+        "timestamp": 1789623314716
+      }
+    ]
+  }
+}
