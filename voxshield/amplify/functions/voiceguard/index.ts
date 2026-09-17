@@ -1,6 +1,6 @@
 import { defineFunction } from '@aws-amplify/backend';
 
-export const voiceguard = defineFunction({
+export default defineFunction({
   name: 'voiceguard',
-  entry: './src/lambda.ts',
+  entry: './handler.ts',
 });

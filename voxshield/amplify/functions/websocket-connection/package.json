@@ -1,0 +1,14 @@
+{
+  "name": "websocket-connection",
+  "version": "1.0.0",
+  "description": "WebSocket connection handler for VoxShield",
+  "main": "src/connection.js",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.645.0",
+    "@aws-sdk/lib-dynamodb": "^3.645.0",
+    "aws-lambda": "^1.0.7"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145"
+  }
+}

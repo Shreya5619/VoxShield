@@ -21,6 +21,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "websocketUrl": "wss://your-api-gateway-url.amazonaws.com/prod",
+      "awsRegion": "us-east-1"
     }
   }
 }

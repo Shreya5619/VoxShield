@@ -8,13 +8,10 @@ const transcribe = new TranscribeClient({});
 export const handler = async (event: any): Promise<any> => {
   console.log("Received event:", JSON.stringify(event));
 
-  // Check if this is an S3 upload event or API Gateway event
   const eventRecords = event.Records || [];
   if (eventRecords && eventRecords.length > 0 && eventRecords[0].s3) {
-    // S3 Event - audio already uploaded
     return handleS3Event(event);
   } else {
-    // API Gateway Event - audio passed in body
     return handleApiEvent(event);
   }
 };
@@ -69,7 +66,6 @@ const handleApiEvent = async (event: any): Promise<any> => {
   await s3.send(putCommand);
   console.log("Audio uploaded to S3");
 
-  // Start transcription
   const jobName = `voiceguard-${uuidv4()}`;
   const mediaUri = `s3://${bucketName}/${s3Key}`;
 
