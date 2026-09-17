@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { 
   StyleSheet, 
@@ -30,6 +30,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('family');
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [isReady, setIsReady] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingType, setRecordingType] = useState<'family' | 'spammer' | null>(null);
 
   // Form state
   const [name, setName] = useState('');
@@ -37,7 +39,6 @@ export default function App() {
   const [relation, setRelation] = useState('');
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [securityAnswer, setSecurityAnswer] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
 
   // Load family members from storage on mount
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function App() {
     initApp();
   }, []);
 
-  const saveFamilyMember = () => {
+  const saveFamilyMember = useCallback(() => {
     if (!name.trim() || !phoneNumber.trim() || !relation.trim()) {
       Alert.alert('Missing Information', 'Please fill in name, phone number, and relation.');
       return;
@@ -96,9 +97,9 @@ export default function App() {
       .catch(() => {
         Alert.alert('Error', 'Failed to save.');
       });
-  };
+  }, [name, phoneNumber, relation, securityQuestion, securityAnswer, familyMembers]);
 
-  const deleteFamilyMember = (id: string) => {
+  const deleteFamilyMember = useCallback((id: string) => {
     const updatedMembers = familyMembers.filter(member => member.id !== id);
     setFamilyMembers(updatedMembers);
     
@@ -109,40 +110,68 @@ export default function App() {
       .catch(() => {
         Alert.alert('Error', 'Failed to delete.');
       });
-  };
+  }, [familyMembers]);
 
-  const startRecording = (callerType: 'family' | 'spammer') => {
-    if (isRecording) return;
-    
+  const startRecording = useCallback((callerType: 'family' | 'spammer') => {
+    if (recording) return;
+
     if (Platform.OS === 'android') {
       PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
         {
           title: 'Audio Recording Permission',
-          message: 'VoxShield needs microphone access.',
+          message: 'VoxShield needs microphone access to record calls.',
           buttonNegative: 'Cancel',
           buttonPositive: 'OK',
         }
       ).then((granted) => {
         if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          setIsRecording(true);
-          Alert.alert('Recording', `Recording ${callerType} call started.`);
+          setRecording(true);
+          setRecordingType(callerType);
+          Alert.alert('Recording Started', `Recording ${callerType} call...`);
         } else {
-          Alert.alert('Permission', 'Microphone permission required.');
+          Alert.alert('Permission Required', 'Microphone permission is required.');
         }
       });
     } else {
-      setIsRecording(true);
-      Alert.alert('Recording', `Recording ${callerType} call started.`);
+      setRecording(true);
+      setRecordingType(callerType);
+      Alert.alert('Recording Started', `Recording ${callerType} call...`);
     }
-  };
+  }, [recording]);
 
-  const stopRecording = () => {
-    setIsRecording(false);
-    Alert.alert('Done', 'Recording saved locally.');
-  };
+  const stopRecording = useCallback(() => {
+    if (!recording || !recordingType) return;
 
-  const renderFamilyMember = ({ item }: { item: FamilyMember }) => (
+    Alert.alert(
+      'Recording Complete',
+      'To upload audio to S3, please convert your recording to base64 format.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            setRecording(false);
+            setRecordingType(null);
+          }
+        },
+        {
+          text: 'Demo Upload',
+          onPress: async () => {
+            const dummyAudio = 'UklGRl9pTQ9XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU';
+            const filename = `recording-${Date.now()}.mp3`;
+            
+            Alert.alert('Success', `Demo upload complete! (S3: recordings/${recordingType}/${filename})`);
+            
+            setRecording(false);
+            setRecordingType(null);
+          }
+        }
+      ]
+    );
+  }, [recording, recordingType]);
+
+  const renderFamilyMember = useCallback(({ item }: { item: FamilyMember }) => (
     <View style={styles.memberCard}>
       <View style={styles.memberInfo}>
         <Text style={styles.memberName}>{item.name}</Text>
@@ -159,7 +188,7 @@ export default function App() {
         <Text style={styles.deleteButtonText}>✕</Text>
       </TouchableOpacity>
     </View>
-  );
+  ), [deleteFamilyMember]);
 
   if (!isReady) {
     return (
@@ -271,14 +300,16 @@ export default function App() {
           <View style={styles.homeContainer}>
             <Text style={styles.homeTitle}>VoxShield</Text>
             <Text style={styles.homeSubtitle}>
-              {isRecording ? '🔴 Recording...' : 'Start recording a call'}
+              {recording 
+                ? '🔴 Recording in progress...' 
+                : 'Start recording a call'}
             </Text>
             
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[styles.callButton, styles.familyButton]}
                 onPress={() => startRecording('family')}
-                disabled={isRecording}
+                disabled={recording}
               >
                 <Text style={styles.callButtonText}>📞 Family Call</Text>
               </TouchableOpacity>
@@ -286,15 +317,15 @@ export default function App() {
               <TouchableOpacity
                 style={[styles.callButton, styles.spammerButton]}
                 onPress={() => startRecording('spammer')}
-                disabled={isRecording}
+                disabled={recording}
               >
                 <Text style={styles.callButtonText}>🚫 Spammer Call</Text>
               </TouchableOpacity>
             </View>
             
-            {isRecording && (
+            {recording && (
               <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
-                <Text style={styles.stopButtonText}>Stop Recording</Text>
+                <Text style={styles.stopButtonText}>⏹️ Stop Recording</Text>
               </TouchableOpacity>
             )}
           </View>
